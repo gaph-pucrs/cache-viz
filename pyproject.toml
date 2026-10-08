@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cache-viz"
+dynamic = ["version"]
+description = "Desktop viewer (and HTML report) of cache timelines and performance, built from FILL/DIRTY/EVICT logs"
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [{ name = "GAPH: Hardware Project Support Group" }]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Environment :: Console",
+    "Environment :: X11 Applications",
+    "Topic :: System :: Hardware",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+cache-viz = "cache_viz.cli:main"
+
+[tool.hatch.version]
+path = "src/cache_viz/__init__.py"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

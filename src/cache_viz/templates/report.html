@@ -1,0 +1,1042 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cache Timeline Viewer</title>
+<style>
+:root{
+  --page:#f9f9f7; --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --muted:#898781;
+  --grid:#e1e0d9; --axis:#c3c2b7; --border:rgba(11,11,11,.10); --rowalt:#f2f1ec; --hover:rgba(11,11,11,.05);
+  --hl:rgba(250,178,25,.28); --ok:#006300; --bad:#d03b3b;
+  /* fixed roles (colorblind-safe: first 3 colors of the categorical palette) */
+  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a;
+  --t0:#2a78d6; --t1:#eb6834; --t2:#1baf7a; --t3:#eda100; --t4:#e87ba4; --t5:#008300; --t6:#4a3aa7; --t7:#e34948;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){
+  --page:#0d0d0d; --surface:#1a1a19; --ink:#ffffff; --ink2:#c3c2b7; --muted:#898781;
+  --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,.10); --rowalt:#222220; --hover:rgba(255,255,255,.06);
+  --hl:rgba(250,178,25,.20); --ok:#0ca30c; --bad:#e66767;
+  --s1:#3987e5; --s2:#d95926; --s3:#199e70;
+  --t0:#3987e5; --t1:#d95926; --t2:#199e70; --t3:#c98500; --t4:#d55181; --t5:#008300; --t6:#9085e9; --t7:#e66767;
+  color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --page:#0d0d0d; --surface:#1a1a19; --ink:#ffffff; --ink2:#c3c2b7; --muted:#898781;
+  --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,.10); --rowalt:#222220; --hover:rgba(255,255,255,.06);
+  --hl:rgba(250,178,25,.20); --ok:#0ca30c; --bad:#e66767;
+  --s1:#3987e5; --s2:#d95926; --s3:#199e70;
+  --t0:#3987e5; --t1:#d95926; --t2:#199e70; --t3:#c98500; --t4:#d55181; --t5:#008300; --t6:#9085e9; --t7:#e66767;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--ink);font:13px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:1500px;margin:0 auto;padding:0 16px 40px}
+h1{font-size:18px;margin:0} h2{font-size:15px;margin:0} h3{font-size:13px;margin:0 0 2px;font-weight:600}
+.sub,.small{color:var(--ink2);font-size:12px}
+.muted{color:var(--muted)}
+header.top{position:sticky;top:0;z-index:20;background:var(--page);border-bottom:1px solid var(--border);padding:10px 0 8px;margin-bottom:4px}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.spread{justify-content:space-between}
+nav.toc a{color:var(--ink2);text-decoration:none;font-size:12px;padding:2px 6px;border-radius:6px}
+nav.toc a:hover{background:var(--hover);color:var(--ink)}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px;margin-top:12px}
+.phead{display:flex;gap:10px;align-items:baseline;justify-content:space-between;flex-wrap:wrap;margin-bottom:8px}
+.how{color:var(--ink2);font-size:12px;margin:2px 0 10px;max-width:980px}
+.tabs{display:flex;gap:6px;flex-wrap:wrap}
+.tabs button,.btn,select,input.in{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:4px 10px;cursor:pointer}
+input.in{cursor:text;width:84px}
+.tabs button.on{background:var(--ink);color:var(--surface);border-color:var(--ink)}
+.btn:hover,.tabs button:hover{border-color:var(--muted)}
+.btn.sm{padding:2px 8px;font-size:12px}
+label{display:inline-flex;gap:5px;align-items:center;color:var(--ink2)}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:9px 11px}
+.card b{display:block;font-size:20px;font-weight:600}
+.card span{color:var(--ink2);font-size:11.5px}
+.card i{display:block;font-style:normal;color:var(--muted);font-size:11px;margin-top:2px}
+.ok{color:var(--ok)} .bad{color:var(--bad)}
+.legend{display:flex;gap:14px;flex-wrap:wrap;align-items:center;color:var(--ink2);font-size:12px}
+.sw{display:inline-block;width:11px;height:11px;border-radius:3px;vertical-align:-1px;margin-right:5px}
+#tlwrap{position:relative;margin-top:8px;overflow:hidden;user-select:none}
+#tl{display:block;cursor:crosshair}
+#tt{position:fixed;pointer-events:none;background:var(--surface);color:var(--ink);border:1px solid var(--border);border-radius:8px;padding:7px 9px;font-size:12px;box-shadow:0 6px 18px rgba(0,0,0,.18);display:none;z-index:50;max-width:380px}
+#tt hr{border:0;border-top:1px solid var(--grid);margin:5px 0}
+.cursorbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}
+.cursorbar input[type=range]{flex:1;min-width:200px}
+.mono,td,.tick{font-variant-numeric:tabular-nums}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.grid2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+@media (max-width:1000px){.grid2,.grid3{grid-template-columns:1fr}}
+.scroll{max-height:460px;overflow:auto;border:1px solid var(--border);border-radius:8px}
+table{border-collapse:collapse;width:100%;font-size:12px}
+th,td{padding:4px 8px;text-align:right;border-bottom:1px solid var(--grid);white-space:nowrap}
+th{position:sticky;top:0;background:var(--surface);color:var(--ink2);font-weight:600;z-index:1}
+th.sort{cursor:pointer} th.sort:hover{color:var(--ink)}
+td.l,th.l{text-align:left}
+tbody tr:hover td{background:var(--hover)}
+tr.cur td{background:var(--hl)!important}
+tr.dim td{color:var(--muted)}
+#log tr,#lines tr[data-l]{cursor:pointer}
+.ev{display:inline-flex;align-items:center;gap:5px;font-weight:600;font-size:11px}
+.ev::before{content:"";width:9px;height:9px;border-radius:2px;background:var(--c)}
+.eF{--c:var(--s1)} .eD{--c:var(--s2)} .eE{--c:var(--s3)}
+.seq{font-size:11px;color:var(--ink2);max-width:420px;overflow:hidden;text-overflow:ellipsis}
+.hbar{display:inline-block;height:8px;background:var(--s2);border-radius:0 4px 4px 0;vertical-align:middle;margin-right:4px}
+details summary{cursor:pointer}
+svg.chart{display:block;overflow:visible}
+svg .grid{stroke:var(--grid);stroke-width:1}
+svg .base{stroke:var(--axis);stroke-width:1}
+svg .tick{fill:var(--muted);font-size:10.5px}
+svg .lbl{fill:var(--ink2);font-size:11px}
+svg .hit{fill:transparent} svg .hit:hover{fill:var(--hover)}
+.chartbox{min-width:0}
+.stat{font-size:12px;color:var(--ink2);margin-top:4px}
+.stat b{color:var(--ink);font-weight:600}
+ul.ins{margin:0;padding-left:18px} ul.ins li{margin:4px 0;max-width:1100px}
+ul.ins li b{font-weight:600}
+.empty{color:var(--muted);font-size:12px;padding:20px 0;text-align:center}
+.mat td{min-width:34px;text-align:center}
+.params label{font-size:12px}
+.rangebadge{font-size:12px;color:var(--ink2);background:var(--hover);border-radius:6px;padding:3px 8px}
+@media print{
+  header.top{position:static} .noprint,.cursorbar,nav.toc{display:none!important}
+  .scroll{max-height:none;overflow:visible} .panel{break-inside:avoid}
+  body{background:#fff}
+}
+</style>
+</head>
+<body>
+<header class="top"><main style="padding-bottom:0">
+  <div class="row spread">
+    <div><h1>Cache Timeline Viewer</h1><div class="sub" id="subtitle"></div></div>
+    <div class="row noprint">
+      <nav class="toc"><a href="#s-tl">Timeline</a><a href="#s-state">State &amp; log</a><a href="#s-perf">Performance</a><a href="#s-dist">Distributions</a><a href="#s-conf">Conflicts</a><a href="#s-lines">Per line</a><a href="#s-cmp">Comparison</a></nav>
+      <button class="btn sm" id="print">print / PDF</button>
+      <button class="btn sm" id="theme" title="toggle theme">◐ theme</button>
+    </div>
+  </div>
+  <div class="tabs" id="tabs" style="margin-top:8px"></div>
+</main></header>
+<main>
+  <div class="cards" id="cards" style="margin-top:10px"></div>
+  <div id="valid"></div>
+
+  <section class="panel" id="s-tl">
+    <div class="phead"><h2>Timeline per cache line</h2></div>
+    <div class="row noprint">
+      <label>time axis <select id="mode"><option value="event">per event (compressed)</option><option value="linear">real time (linear)</option></select></label>
+      <label>orientation <select id="orient"><option value="h">time → horizontal</option><option value="v">time ↓ vertical</option></select></label>
+      <label>color <select id="color"><option value="state">state (clean/dirty)</option><option value="tag">tag</option></select></label>
+      <label>size <input type="range" id="rowpx" min="5" max="28" value="12" style="width:80px"></label>
+      <button class="btn sm" id="zin">＋ zoom</button><button class="btn sm" id="zout">－ zoom</button><button class="btn sm" id="zreset">fit</button>
+    </div>
+    <div class="legend" id="legend" style="margin-top:8px"></div>
+    <div class="small noprint" style="margin-top:4px">Drag to pan · ⌘/Ctrl/Alt + wheel (or pinch) to zoom · click to move the cursor · ←/→ previous/next event · space = play. With “reports follow zoom” on, the reports below only use the visible range.</div>
+    <div id="tlwrap"><canvas id="tl"></canvas></div>
+    <div class="cursorbar">
+      <button class="btn" id="prev">◀</button>
+      <button class="btn" id="play">▶ play</button>
+      <button class="btn" id="next">▶</button>
+      <select id="speed"><option value="2">2 ev/s</option><option value="8" selected>8 ev/s</option><option value="30">30 ev/s</option><option value="120">120 ev/s</option></select>
+      <input type="range" id="slider" min="0" value="0">
+      <span class="mono small" id="curinfo"></span>
+    </div>
+  </section>
+
+  <div class="grid2" id="s-state">
+    <section class="panel">
+      <div class="phead"><h2>Cache state at cursor</h2><span class="small" id="snapinfo"></span></div>
+      <div class="scroll"><table id="snap"></table></div>
+    </section>
+    <section class="panel">
+      <div class="phead"><h2>Event log</h2>
+        <div class="row noprint">
+          <label><input type="checkbox" class="ft" value="F" checked>FILL</label>
+          <label><input type="checkbox" class="ft" value="D" checked>DIRTY</label>
+          <label><input type="checkbox" class="ft" value="E" checked>EVICT</label>
+          <label>line <input id="fline" class="in" style="width:60px" placeholder="all"></label>
+          <button class="btn sm" data-csv="events">CSV</button>
+        </div>
+      </div>
+      <div class="scroll" id="logwrap"><table id="log"></table></div>
+    </section>
+  </div>
+
+  <section class="panel" id="s-perf">
+    <div class="phead">
+      <h2>Performance report</h2>
+      <span class="rangebadge" id="range"></span>
+    </div>
+    <div class="row params noprint" style="margin-bottom:10px">
+      <label><input type="checkbox" id="sync" checked> reports follow zoom</label>
+      <label>windows <select id="nbins"><option>30</option><option selected>60</option><option>120</option><option>240</option></select></label>
+      <label title="TIME units per clock cycle">clock period <input class="in" id="p-period" type="number" min="0" step="any"></label>
+      <label>block (bytes) <input class="in" id="p-block" type="number" min="0" step="1"></label>
+      <label>miss penalty (cycles) <input class="in" id="p-miss" type="number" min="0" step="any"></label>
+      <label>write-back penalty (cycles) <input class="in" id="p-wb" type="number" min="0" step="any"></label>
+    </div>
+    <h3>Automatic findings</h3>
+    <ul class="ins" id="insights"></ul>
+    <div class="cards" id="pcards" style="margin-top:12px"></div>
+
+    <div class="grid2" style="margin-top:16px">
+      <div class="chartbox">
+        <h3>Misses (FILLs) per time window</h3>
+        <div class="how">Each bar is one window of the range; its height is the number of FILLs, split into compulsory (first access to the block) and re-fills (the block was in the cache before and got evicted). Peaks = program phases with worse locality.</div>
+        <div class="legend" id="lg-miss"></div><div id="c-miss"></div>
+      </div>
+      <div class="chartbox">
+        <h3>Write-backs per time window</h3>
+        <div class="how">EVICTs of dirty lines: each one is a block write to memory. Same windows as the chart next to it.</div>
+        <div id="c-wb"></div>
+      </div>
+      <div class="chartbox">
+        <h3>Cumulative misses (warm-up)</h3>
+        <div class="how">A compulsory curve that flattens = cache “warmed up” (working set loaded); a re-fill curve that keeps rising after that measures the steady-state cost of conflicts.</div>
+        <div class="legend" id="lg-cum"></div><div id="c-cum"></div>
+      </div>
+      <div class="chartbox">
+        <h3>Cache occupancy</h3>
+        <div class="how">Valid and dirty lines over time (out of <span id="nl"></span>). Low occupancy with many re-fills points to mapping conflicts, not lack of capacity.</div>
+        <div class="legend" id="lg-occ"></div><div id="c-occ"></div>
+      </div>
+    </div>
+
+    <div style="margin-top:16px">
+      <div class="phead"><h3>Heatmap: line × time</h3>
+        <label class="noprint">metric <select id="heat"><option value="F">FILLs</option><option value="conf">re-fills (conflict)</option><option value="E">write-backs</option></select></label></div>
+      <div class="how">Each cell counts the events of one cache line in one window. Persistently “hot” lines are conflict candidates; fully dark columns are miss bursts.</div>
+      <div id="c-heat"></div>
+    </div>
+  </section>
+
+  <section class="panel" id="s-dist">
+    <div class="phead"><h2>Time distributions</h2></div>
+    <div class="how">Log-scale histograms (each bucket doubles the previous one), in TIME units. The median and p90 summarize each distribution.</div>
+    <div class="grid3">
+      <div class="chartbox"><h3>Time between misses</h3><div class="how">Time between consecutive FILLs (whole cache). Many small values = bursty misses, pressure on memory.</div><div id="c-gap"></div><div class="stat" id="st-gap"></div></div>
+      <div class="chartbox"><h3>Block lifetime</h3><div class="how">From the FILL until the block leaves, by clean replacement or by write-back. Short life followed by a re-fill = thrashing.</div><div class="legend" id="lg-life"></div><div id="c-life"></div><div class="stat" id="st-life"></div></div>
+      <div class="chartbox"><h3>Time out of cache (reuse)</h3><div class="how">From a block leaving until it comes back (re-fill). Quick returns = the block was evicted too early; more associativity would avoid them.</div><div id="c-reuse"></div><div class="stat" id="st-reuse"></div></div>
+    </div>
+  </section>
+
+  <section class="panel" id="s-conf">
+    <div class="phead"><h2>Conflicts</h2></div>
+    <div class="grid2">
+      <div><h3>Tag replacement matrix</h3><div class="how">Rows = tag that left; columns = tag that took its place (summed over all cache lines). A strong symmetric diagonal indicates pairs of memory regions competing for the same indices.</div><div id="c-mat"></div></div>
+      <div><h3>Most contested pairs</h3><div class="how">Per cache line: how many times one block evicted the other (both directions) and how many A→B→A ping-pongs happened.</div><div class="scroll" style="max-height:340px"><table id="pairs"></table></div></div>
+    </div>
+  </section>
+
+  <section class="panel" id="s-lines">
+    <div class="phead"><h2>Per-line metrics</h2><button class="btn sm noprint" data-csv="lines">CSV</button></div>
+    <div class="how">Click a header to sort, and a row to filter the log and move the cursor to it. Occupancy = fraction of the range during which the line was valid.</div>
+    <div class="scroll" style="max-height:520px"><table id="lines"></table></div>
+  </section>
+
+  <section class="panel" id="s-cmp">
+    <div class="phead"><h2>Cache comparison</h2><button class="btn sm noprint" data-csv="cmp">CSV</button></div>
+    <div class="how">All caches loaded in this HTML, each over its full range. Useful to compare I-cache × D-cache, or two configurations/programs.</div>
+    <div class="scroll" style="max-height:none"><table id="cmp"></table></div>
+    <div style="margin-top:14px"><h3>Cumulative FILLs per cache</h3><div class="legend" id="lg-cmp"></div><div id="c-cmp"></div></div>
+    <div class="row noprint" style="margin-top:12px"><button class="btn sm" data-csv="bins">Window CSV (current cache)</button></div>
+  </section>
+</main>
+<div id="tt"></div>
+<script>
+const DATA = /*__DATA__*/null;
+const $ = (s, r) => (r || document).querySelector(s);
+const $$ = (s, r) => [...(r || document).querySelectorAll(s)];
+const view = {mode: 'event', orient: 'h', color: 'state', rowPx: 12, u0: 0, u1: 1, cur: 0, timer: null,
+              sync: true, nbins: 60, heat: 'F', sort: {k: 'conf', d: -1}};
+let C = null, G = null, M = null;
+
+/* ---------- parameters (CLI values as defaults; edits on the page are saved in the browser) ---------- */
+const P = Object.assign({period: 0, blockBytes: 0, missPen: 0, wbPen: 0}, DATA.params);
+const PKEY = 'cacheviz.params', PSIG = JSON.stringify(DATA.params);
+try { const s = JSON.parse(localStorage.getItem(PKEY) || 'null'); if (s && s.sig === PSIG) Object.assign(P, s.p); } catch (e) {}
+const saveP = () => { try { localStorage.setItem(PKEY, JSON.stringify({sig: PSIG, p: P})); } catch (e) {} };
+
+/* ---------- formatting ---------- */
+const nf = new Intl.NumberFormat('en-US', {maximumFractionDigits: 2});
+const fmt = n => nf.format(n);
+const fmtI = n => Math.round(n).toLocaleString('en-US');
+const pct = (x, d = 1) => isFinite(x) ? (100 * x).toFixed(d) + '%' : '–';
+const cyc = t => P.period > 0 ? ` (${fmtI(t / P.period)} cyc)` : '';
+const compact = n => { const a = Math.abs(n); return a >= 1e6 ? (n / 1e6).toFixed(a >= 1e7 ? 0 : 1) + 'M' : a >= 1e3 ? (n / 1e3).toFixed(a >= 1e4 ? 0 : 1) + 'k' : String(Math.round(n * 10) / 10); };
+const bytes = b => b >= 1048576 ? (b / 1048576).toFixed(2) + ' MiB' : b >= 1024 ? (b / 1024).toFixed(1) + ' KiB' : fmtI(b) + ' B';
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+const cssv = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const quant = (arr, q) => { if (!arr.length) return NaN; const s = [...arr].sort((a, b) => a - b); const i = (s.length - 1) * q, lo = Math.floor(i); return s[lo] + (s[Math.ceil(i)] - s[lo]) * (i - lo); };
+const sum = a => a.reduce((x, y) => x + y, 0);
+const isDark = () => { const t = document.documentElement.dataset.theme; return t ? t === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches; };
+const NAME = {F: 'FILL', D: 'DIRTY', E: 'EVICT'};
+const evTag = ty => `<span class="ev e${ty}">${NAME[ty]}</span>`;
+
+/* ---------- preparing one cache's data ---------- */
+function prep(c) {
+  if (c.ready) return;
+  const ts = [...new Set(c.events.map(e => e[0]))].sort((a, b) => a - b);
+  if (!ts.length || c.t_end > ts[ts.length - 1]) ts.push(c.t_end);
+  c.ts = ts; c.tmin = ts[0];
+  c.segByLine = Array.from({length: c.nlines}, () => []);
+  for (const s of c.segs) c.segByLine[s[0]].push(s);
+  c.segByLine.forEach(a => a.sort((x, y) => x[1] - y[1]));
+  c.evByLine = Array.from({length: c.nlines}, () => []);
+  c.events.forEach((e, i) => c.evByLine[e[2]].push(i));
+  c.usedLines = [...Array(c.nlines).keys()].filter(l => c.evByLine[l].length);
+  c.tagList = [...new Set(c.events.map(e => e[3]))].sort((a, b) => (+a - +b) || String(a).localeCompare(b));
+  // occupancy (valid / dirty lines) over time, as a step function
+  const deltas = [];
+  for (const s of c.segs) { deltas.push([s[1], 1, s[4]]); if (!s[5]) deltas.push([s[2], -1, s[4]]); }  // an open segment does not "empty" at the end
+  deltas.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  let v = 0, d = 0; c.occ = [[c.tmin, 0, 0]];
+  for (const [t, k, dirty] of deltas) { v += k; if (dirty) d += k; const last = c.occ[c.occ.length - 1]; if (last[0] === t) { last[1] = v; last[2] = d; } else c.occ.push([t, v, d]); }
+  // residencies (FILL until exit), time out of cache and tag transitions
+  const cur = Array(c.nlines).fill(null), lastOut = new Map();
+  c.res = []; c.reuse = []; c.trans = [];
+  for (const [t, ty, l, tag, , pk, ptag] of c.events) {
+    const r = cur[l];
+    if (ty === 'F') {
+      if (r) { r.t1 = t; r.end = 'clean'; c.res.push(r); lastOut.set(l + ':' + r.tag, t); }
+      const k = l + ':' + tag;
+      if (lastOut.has(k)) c.reuse.push({l, tag, out: lastOut.get(k), t});
+      if (pk) c.trans.push({t, l, from: ptag, to: tag, kind: pk});
+      cur[l] = {l, tag, t0: t, t1: null, end: null};
+    } else if (ty === 'E' && r) {
+      r.t1 = t; r.end = 'wb'; c.res.push(r); lastOut.set(l + ':' + r.tag, t); cur[l] = null;
+    }
+  }
+  cur.forEach(r => { if (r) { r.t1 = c.t_end; r.end = 'open'; c.res.push(r); } });
+  // warm-up: when occupancy reaches 50% / 90% of its maximum
+  const mx = Math.max(0, ...c.occ.map(o => o[1]));
+  c.warm = {max: mx, t50: (c.occ.find(o => o[1] >= mx * 0.5) || [NaN])[0], t90: (c.occ.find(o => o[1] >= mx * 0.9) || [NaN])[0]};
+  c.ready = true;
+}
+
+/* ---------- metrics over a range [a, b] ---------- */
+function metrics(c, a, b, nb) {
+  const span = Math.max(1, b - a), w = span / nb;
+  const bin = t => Math.min(nb - 1, Math.max(0, Math.floor((t - a) / w)));
+  const zeros = () => new Array(nb).fill(0);
+  const R = {a, b, span, nb, w, F: 0, D: 0, E: 0, cold: 0, conf: 0, repl: 0, wb: 0, pp: 0, open: 0,
+    bins: {cold: zeros(), conf: zeros(), wb: zeros(), D: zeros()},
+    heat: {F: [], conf: [], E: []}, gaps: [], life: {clean: [], wb: []}, reuse: [], mat: new Map(), pairs: new Map(),
+    lines: Array.from({length: c.nlines}, (_, l) => ({l, F: 0, cold: 0, conf: 0, E: 0, repl: 0, D: 0, blocks: new Set(), seq: [], valid: 0, dirtyT: 0, life: [], pp: 0, first: null}))};
+  for (const k in R.heat) for (let l = 0; l < c.nlines; l++) R.heat[k].push(zeros());
+  let lastF = null;
+  c.events.forEach((e, i) => {
+    const t = e[0]; if (t < a || t > b) return;
+    const L = R.lines[e[2]], k = bin(t);
+    if (L.first === null) L.first = i;
+    if (e[1] === 'F') {
+      R.F++; L.F++; R[e[4]]++; L[e[4]]++; R.bins[e[4]][k]++; R.heat.F[e[2]][k]++;
+      if (e[4] === 'conf') R.heat.conf[e[2]][k]++;
+      if (e[5] === 'clean') { R.repl++; L.repl++; }
+      L.blocks.add(e[3]); L.seq.push(e[3]);
+      if (lastF !== null) R.gaps.push(t - lastF); lastF = t;
+    } else if (e[1] === 'D') { R.D++; L.D++; R.bins.D[k]++; }
+    else { R.E++; L.E++; R.bins.wb[k]++; R.heat.E[e[2]][k]++; if (e[4] === 'wb') R.wb++; }
+  });
+  for (const L of R.lines) {
+    for (let i = 2; i < L.seq.length; i++) if (L.seq[i] === L.seq[i - 2] && L.seq[i] !== L.seq[i - 1]) L.pp++;
+    R.pp += L.pp;
+  }
+  for (const s of c.segs) {
+    const o = Math.min(b, s[2]) - Math.max(a, s[1]);
+    if (o > 0) { R.lines[s[0]].valid += o; if (s[4]) R.lines[s[0]].dirtyT += o; }
+  }
+  for (const r of c.res) {
+    if (r.t0 <= b && r.t1 > b || (r.end === 'open' && r.t0 <= b)) { R.open++; continue; }
+    if (r.end !== 'open' && r.t1 >= a && r.t1 <= b) { R.life[r.end].push(r.t1 - r.t0); R.lines[r.l].life.push(r.t1 - r.t0); }
+  }
+  for (const x of c.reuse) if (x.t >= a && x.t <= b) R.reuse.push(x.t - x.out);
+  for (const x of c.trans) {
+    if (x.t < a || x.t > b) continue;
+    const mk = x.from + '→' + x.to; R.mat.set(mk, (R.mat.get(mk) || 0) + 1);
+    const [p, q] = [x.from, x.to].sort((u, v) => (+u - +v) || String(u).localeCompare(v));
+    const pk = x.l + '|' + p + '|' + q;
+    const o = R.pairs.get(pk) || {l: x.l, a: p, b: q, n: 0, pp: 0}; o.n++; R.pairs.set(pk, o);
+  }
+  for (const o of R.pairs.values()) {   // A→B→A ping-pong within the pair
+    const s = R.lines[o.l].seq;
+    for (let i = 2; i < s.length; i++) if (s[i] === s[i - 2] && s[i] !== s[i - 1] && [s[i], s[i - 1]].every(x => x === o.a || x === o.b)) o.pp++;
+  }
+  R.util = sum(R.lines.map(L => L.valid)) / (c.nlines * span);
+  R.dirtyUtil = sum(R.lines.map(L => L.dirtyT)) / (c.nlines * span);
+  R.usedLines = R.lines.filter(L => L.F || L.E || L.D).length;
+  return R;
+}
+
+/* ---------- timeline time axis: t <-> u (0..1) ---------- */
+function u(t) {
+  if (view.mode === 'linear') return (t - C.tmin) / Math.max(1, C.ts[C.ts.length - 1] - C.tmin);
+  const ts = C.ts, n = ts.length;
+  if (n < 2 || t <= ts[0]) return 0;
+  if (t >= ts[n - 1]) return 1;
+  let lo = 0, hi = n - 1;
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (ts[m] <= t) lo = m; else hi = m; }
+  return (lo + (t - ts[lo]) / (ts[hi] - ts[lo])) / (n - 1);
+}
+function tOf(uu) {
+  const ts = C.ts, n = ts.length;
+  uu = Math.min(1, Math.max(0, uu));
+  if (view.mode === 'linear' || n < 2) return C.tmin + uu * (ts[n - 1] - C.tmin);
+  const x = uu * (n - 1), i = Math.min(n - 2, Math.floor(x));
+  return ts[i] + (x - i) * (ts[i + 1] - ts[i]);
+}
+const tp = t => (u(t) - view.u0) / (view.u1 - view.u0) * G.len;
+const pt = p => tOf(view.u0 + p / G.len * (view.u1 - view.u0));
+
+/* ---------- timeline (canvas) ---------- */
+function geom() {
+  const rows = [...Array(C.nlines).keys()];
+  const W = $('#tlwrap').clientWidth;
+  const g = {rows, W, h: view.orient === 'h'};
+  if (g.h) {
+    g.L = 44; g.occH = 34; g.T = 22 + g.occH + 6; g.rp = view.rowPx;
+    g.H = g.T + rows.length * g.rp + 6; g.len = W - g.L - 10;
+  } else {
+    g.L = 92; g.T = 26; g.rp = Math.max(6, Math.min(40, Math.floor((W - g.L - 10) / Math.max(1, rows.length))));
+    g.H = Math.max(420, Math.min(window.innerHeight * 0.85, 60 * view.rowPx)); g.len = g.H - g.T - 8;
+  }
+  return g;
+}
+function rect(p0, p1, r, pad) {
+  pad = pad || 0;
+  return G.h ? [G.L + p0, G.T + r * G.rp + pad, p1 - p0, G.rp - 1 - 2 * pad]
+             : [G.L + r * G.rp + pad, G.T + p0, G.rp - 1 - 2 * pad, p1 - p0];
+}
+function hatchPattern(ctx) {
+  const c = document.createElement('canvas'); c.width = c.height = 6;
+  const x = c.getContext('2d'); x.strokeStyle = 'rgba(0,0,0,.45)'; x.lineWidth = 1.5;
+  x.beginPath(); x.moveTo(0, 6); x.lineTo(6, 0); x.moveTo(-1, 1); x.lineTo(1, -1); x.moveTo(5, 7); x.lineTo(7, 5); x.stroke();
+  return ctx.createPattern(c, 'repeat');
+}
+function draw() {
+  G = geom();
+  const cv = $('#tl'), dpr = window.devicePixelRatio || 1;
+  cv.width = G.W * dpr; cv.height = G.H * dpr; cv.style.width = G.W + 'px'; cv.style.height = G.H + 'px';
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const hatch = hatchPattern(ctx);
+  const col = {bg: cssv('--surface'), alt: cssv('--rowalt'), muted: cssv('--muted'), grid: cssv('--grid'), axis: cssv('--axis'),
+    clean: cssv('--s1'), dirty: cssv('--s2'), evict: cssv('--s3'), cur: cssv('--ink'), mk: cssv('--surface'), hl: cssv('--hl')};
+  const tagCol = C.tagList.map((_, i) => cssv('--t' + Math.min(i, 7)));
+  const tagIdx = Object.fromEntries(C.tagList.map((t, i) => [t, i]));
+  ctx.fillStyle = col.bg; ctx.fillRect(0, 0, G.W, G.H);
+  ctx.font = '10px ui-monospace,Menlo,monospace'; ctx.textBaseline = 'middle';
+  const curEv = C.events[view.cur];
+
+  G.rows.forEach((line, r) => {
+    const [x, y, w, h] = rect(0, G.len, r);
+    if (r % 2) { ctx.fillStyle = col.alt; ctx.fillRect(x, y, w, h + 1); }
+    if (curEv && curEv[2] === line) { ctx.fillStyle = col.hl; ctx.fillRect(x, y, w, h + 1); }
+    ctx.fillStyle = col.muted;
+    if (G.h) { if (G.rp >= 8 || r % 2 === 0) { ctx.textAlign = 'right'; ctx.fillText(line, G.L - 6, y + h / 2); } }
+    else if (G.rp >= 14 || r % 2 === 0) { ctx.textAlign = 'center'; ctx.fillText(line, x + w / 2, G.T - 9); }
+  });
+  ctx.fillStyle = col.muted; ctx.textAlign = 'left';
+  ctx.fillText(G.h ? 'line' : 'line →', 4, G.T - 9);
+
+  if (G.h) {   // occupancy strip
+    const y0 = 20, H = G.occH, n = C.nlines;
+    ctx.strokeStyle = col.grid; ctx.strokeRect(G.L + .5, y0 + .5, G.len, H);
+    for (const [key, color, alpha] of [[1, col.clean, .35], [2, col.dirty, .7]]) {
+      ctx.beginPath(); ctx.moveTo(G.L, y0 + H);
+      let prevY = y0 + H;
+      for (const o of C.occ) {
+        const p = Math.max(0, Math.min(G.len, tp(o[0]))), yy = y0 + H - o[key] / n * H;
+        ctx.lineTo(G.L + p, prevY); ctx.lineTo(G.L + p, yy); prevY = yy;
+      }
+      ctx.lineTo(G.L + G.len, prevY); ctx.lineTo(G.L + G.len, y0 + H); ctx.closePath();
+      ctx.globalAlpha = alpha; ctx.fillStyle = color; ctx.fill(); ctx.globalAlpha = 1;
+    }
+    ctx.fillStyle = col.muted; ctx.textAlign = 'right'; ctx.fillText('occ.', G.L - 6, y0 + H / 2);
+  }
+
+  for (const line of G.rows) {
+    const r = line;
+    for (const s of C.segByLine[line]) {
+      let p0 = tp(s[1]), p1 = tp(s[2]);
+      if (p1 < 0 || p0 > G.len) continue;
+      p0 = Math.max(0, p0); p1 = Math.min(G.len, p1); if (p1 - p0 < 1) p1 = p0 + 1;
+      const R = rect(p0, p1, r, 1);
+      ctx.fillStyle = view.color === 'tag' ? tagCol[tagIdx[s[3]]] : (s[4] ? col.dirty : col.clean);
+      ctx.fillRect(...R);
+      if (view.color === 'tag' && s[4]) { ctx.fillStyle = hatch; ctx.fillRect(...R); }
+      if ((G.h ? R[2] : R[3]) > 18 && G.rp >= 11) {
+        ctx.fillStyle = 'rgba(255,255,255,.95)';
+        if (G.h) { ctx.textAlign = 'left'; ctx.fillText(s[3], R[0] + 4, R[1] + R[3] / 2); }
+        else { ctx.textAlign = 'center'; ctx.fillText(s[3], R[0] + R[2] / 2, R[1] + 8); }
+      }
+    }
+  }
+  for (const e of C.events) {
+    const r = e[2], p = tp(e[0]); if (p < -2 || p > G.len + 2) continue;
+    const [x, y] = rect(p, p, r, 0);
+    if (e[1] === 'F') {
+      ctx.fillStyle = col.mk;
+      if (G.h) ctx.fillRect(x, y + 1, 1.5, G.rp - 3); else ctx.fillRect(x + 1, y, G.rp - 3, 1.5);
+    } else if (e[1] === 'E') {
+      ctx.fillStyle = col.evict; ctx.beginPath();
+      const s = Math.min(5, G.rp / 2);
+      if (G.h) { const cy = y + (G.rp - 1) / 2; ctx.moveTo(x, cy - s); ctx.lineTo(x + s * 1.2, cy); ctx.lineTo(x, cy + s); }
+      else { const cx = x + (G.rp - 1) / 2; ctx.moveTo(cx - s, y); ctx.lineTo(cx, y + s * 1.2); ctx.lineTo(cx + s, y); }
+      ctx.closePath(); ctx.fill();
+    }
+  }
+  ctx.fillStyle = col.muted; ctx.strokeStyle = col.grid;
+  const nt = Math.max(2, Math.floor(G.len / (G.h ? 110 : 60)));
+  for (let i = 0; i <= nt; i++) {
+    const p = G.len * i / nt, t = Math.round(pt(p));
+    ctx.beginPath();
+    if (G.h) {
+      ctx.textAlign = i === 0 ? 'left' : i === nt ? 'right' : 'center'; ctx.fillText(fmtI(t), G.L + p, 8);
+      ctx.moveTo(G.L + p + .5, 14); ctx.lineTo(G.L + p + .5, G.H);
+    } else {
+      ctx.textAlign = 'right'; ctx.fillText(fmtI(t), G.L - 6, G.T + p);
+      ctx.moveTo(G.L - 3, G.T + p + .5); ctx.lineTo(G.W, G.T + p + .5);
+    }
+    ctx.globalAlpha = .5; ctx.stroke(); ctx.globalAlpha = 1;
+  }
+  if (curEv) {
+    const p = tp(curEv[0]);
+    if (p >= 0 && p <= G.len) {
+      ctx.strokeStyle = col.cur; ctx.lineWidth = 1.5; ctx.beginPath();
+      if (G.h) { ctx.moveTo(G.L + p, 14); ctx.lineTo(G.L + p, G.H); } else { ctx.moveTo(G.L - 3, G.T + p); ctx.lineTo(G.W, G.T + p); }
+      ctx.stroke(); ctx.lineWidth = 1;
+    }
+  }
+  const key = `${view.u0},${view.u1},${view.mode}`;
+  if (view.sync && key !== view.repKey) { view.repKey = key; scheduleReports(); }
+}
+
+function hit(mx, my) {
+  const along = G.h ? mx - G.L : my - G.T, across = G.h ? my - G.T : mx - G.L;
+  if (along < 0 || along > G.len) return null;
+  const r = Math.floor(across / G.rp);
+  return {p: along, t: pt(along), r, line: G.rows[r]};
+}
+function describeEvent(e) {
+  const [, ty, , tag, cls, pk, ptag] = e;
+  if (ty === 'F') {
+    let s = cls === 'cold' ? 'compulsory miss (first access to the block)' : 're-fill: block was in the cache before (conflict)';
+    if (pk === 'clean') s += ` · replaces tag ${esc(ptag)} (clean, no write-back)`;
+    if (pk === 'wb') s += ` · after write-back of tag ${esc(ptag)}`;
+    return s;
+  }
+  if (ty === 'D') return cls === 're' ? 'write (line was already dirty)' : 'write → line becomes dirty';
+  return cls === 'wb' ? `write-back of tag ${esc(tag)} (dirty line evicted)` : `evict of clean line (tag ${esc(tag)})`;
+}
+
+/* ---------- shared tooltip ---------- */
+function showTip(ev, html) {
+  const t = $('#tt'); t.innerHTML = html; t.style.display = 'block';
+  t.style.left = Math.max(4, Math.min(ev.clientX + 14, innerWidth - t.offsetWidth - 8)) + 'px';
+  t.style.top = Math.max(4, Math.min(ev.clientY + 14, innerHeight - t.offsetHeight - 8)) + 'px';
+}
+const hideTip = () => { $('#tt').style.display = 'none'; };
+
+function setupCanvas() {
+  const cv = $('#tl');
+  let drag = null;
+  cv.addEventListener('mousedown', e => { drag = {x: e.clientX, y: e.clientY, u0: view.u0, u1: view.u1, moved: false}; });
+  window.addEventListener('mouseup', e => {
+    if (drag && !drag.moved) {
+      const b = cv.getBoundingClientRect(), h = hit(e.clientX - b.left, e.clientY - b.top);
+      if (h) {
+        let best = -1, bd = Infinity;
+        const cand = (h.line !== undefined && C.evByLine[h.line].length) ? C.evByLine[h.line] : C.events.map((_, i) => i);
+        for (const i of cand) { const d = Math.abs(tp(C.events[i][0]) - h.p); if (d < bd) { bd = d; best = i; } }
+        if (bd > 12) { best = 0; for (let i = 0; i < C.events.length; i++) if (C.events[i][0] <= h.t) best = i; }
+        setCur(best, true);
+      }
+    }
+    drag = null;
+  });
+  window.addEventListener('mousemove', e => {
+    if (!drag) return;
+    const d = G.h ? e.clientX - drag.x : e.clientY - drag.y;
+    if (Math.abs(d) > 3) drag.moved = true;
+    if (drag.moved) { const span = drag.u1 - drag.u0; let s = drag.u0 - d / G.len * span; s = Math.max(0, Math.min(1 - span, s)); view.u0 = s; view.u1 = s + span; draw(); }
+    hideTip();
+  });
+  cv.addEventListener('mousemove', e => {
+    if (drag) return;
+    const b = cv.getBoundingClientRect(), mx = e.clientX - b.left, my = e.clientY - b.top;
+    const h = hit(mx, my);
+    if (!h || h.line === undefined || h.r < 0) return hideTip();
+    let html = `<b>line ${h.line}</b> · t≈${fmtI(h.t)}${cyc(h.t)}<br>`;
+    const seg = C.segByLine[h.line].find(s => s[1] <= h.t && h.t < s[2]);
+    if (seg) html += `valid · tag <b>${esc(seg[3])}</b> · ${seg[4] ? 'dirty' : 'clean'}<br>range [${fmtI(seg[1])}, ${seg[5] ? 'end' : fmtI(seg[2])}) · ${fmtI(seg[2] - seg[1])} t.u.`;
+    else html += 'invalid';
+    let near = null, nd = 6;
+    for (const i of C.evByLine[h.line]) { const d = Math.abs(tp(C.events[i][0]) - h.p); if (d < nd) { nd = d; near = i; } }
+    if (near !== null) { const ev = C.events[near]; html += `<hr>#${near} ${evTag(ev[1])} t=${fmtI(ev[0])} tag ${esc(ev[3])}<br><span class="small">${describeEvent(ev)}</span>`; }
+    showTip(e, html);
+  });
+  cv.addEventListener('mouseleave', hideTip);
+  cv.addEventListener('wheel', e => {
+    const b = cv.getBoundingClientRect(), along = G.h ? e.clientX - b.left - G.L : e.clientY - b.top - G.T;
+    if (e.ctrlKey || e.metaKey || e.altKey) { e.preventDefault(); zoom(Math.exp(e.deltaY * 0.01), Math.max(0, Math.min(1, along / G.len))); }
+    else if (G.h && Math.abs(e.deltaX) > Math.abs(e.deltaY)) { e.preventDefault(); pan(e.deltaX / G.len); }
+  }, {passive: false});
+}
+function zoom(f, at) {
+  at = at === undefined ? 0.5 : at;
+  const span = view.u1 - view.u0, ns = Math.min(1, Math.max(1e-4, span * f)), c = view.u0 + at * span;
+  let a = c - at * ns; a = Math.max(0, Math.min(1 - ns, a)); view.u0 = a; view.u1 = a + ns; draw();
+}
+function pan(frac) {
+  const span = view.u1 - view.u0; let a = view.u0 + frac * span; a = Math.max(0, Math.min(1 - span, a)); view.u0 = a; view.u1 = a + span; draw();
+}
+
+/* ---------- cursor, snapshot and log ---------- */
+function setCur(i, keep) {
+  if (!C.events.length) return;
+  view.cur = Math.max(0, Math.min(C.events.length - 1, i));
+  const e = C.events[view.cur], uu = u(e[0]);
+  if (!keep && (uu < view.u0 || uu > view.u1)) { const span = view.u1 - view.u0; let a = uu - span / 2; a = Math.max(0, Math.min(1 - span, a)); view.u0 = a; view.u1 = a + span; }
+  $('#slider').value = view.cur;
+  $('#curinfo').innerHTML = `#${view.cur} · t=${fmtI(e[0])}${cyc(e[0])} · ${evTag(e[1])} line ${e[2]} tag ${esc(e[3])}`;
+  draw(); snapshot(); markLog();
+}
+function snapshot() {
+  const e = C.events[view.cur], T = e[0];
+  const cnt = Array.from({length: C.nlines}, () => [0, 0, 0, null]);
+  for (let i = 0; i <= view.cur; i++) { const ev = C.events[i], c = cnt[ev[2]]; c['FED'.indexOf(ev[1])]++; c[3] = i; }
+  let valid = 0, dirty = 0;
+  const rows = [];
+  for (let l = 0; l < C.nlines; l++) {
+    let s = null;
+    for (const sg of C.segByLine[l]) if (sg[1] <= T && (T < sg[2] || (sg[5] && T <= sg[2]))) s = sg;
+    if (s && cnt[l][3] !== null) { const last = C.events[cnt[l][3]]; if (last[0] === T && last[1] === 'E') s = null; }
+    if (s) { valid++; if (s[4]) dirty++; }
+    const c = cnt[l], le = c[3] !== null ? C.events[c[3]] : null;
+    rows.push(`<tr class="${l === e[2] ? 'cur' : s ? '' : 'dim'}"><td>${l}</td><td>${s ? 1 : 0}</td><td>${s && s[4] ? '<b>1</b>' : 0}</td>` +
+      `<td>${s ? esc(s[3]) : '–'}</td><td>${s ? fmtI(s[1]) : '–'}</td><td>${c[0]}</td><td>${c[1]}</td><td>${c[2]}</td>` +
+      `<td class="l">${le ? `${evTag(le[1])} t=${fmtI(le[0])}` : ''}</td></tr>`);
+  }
+  $('#snap').innerHTML = '<thead><tr><th>line</th><th>V</th><th>D</th><th>tag</th><th>valid since</th><th>fills</th><th>evicts</th><th>dirty</th><th class="l">last event</th></tr></thead><tbody>' + rows.join('') + '</tbody>';
+  $('#snapinfo').innerHTML = `t=${fmtI(T)}${cyc(T)} · <b>${valid}</b>/${C.nlines} valid · <b>${dirty}</b> dirty`;
+  const cr = $('#snap tr.cur'); if (cr) { const w = cr.closest('.scroll'); w.scrollTop = Math.max(0, cr.offsetTop - w.clientHeight / 2); }
+}
+function buildLog() {
+  const types = $$('.ft:checked').map(x => x.value);
+  const fl = $('#fline').value.trim(), lf = fl === '' ? null : +fl;
+  const rows = [];
+  C.events.forEach((e, i) => {
+    if (!types.includes(e[1]) || (lf !== null && e[2] !== lf)) return;
+    rows.push(`<tr data-i="${i}"><td>${i}</td><td class="mono">${fmtI(e[0])}</td><td class="l">${evTag(e[1])}</td><td>${e[2]}</td><td>${esc(e[3])}</td><td class="l small">${describeEvent(e)}</td></tr>`);
+  });
+  $('#log').innerHTML = '<thead><tr><th>#</th><th>time</th><th class="l">event</th><th>line</th><th>tag</th><th class="l">interpretation</th></tr></thead><tbody>' + rows.join('') + '</tbody>';
+  markLog();
+}
+function markLog() {
+  const old = $('#log tr.cur'); if (old) old.classList.remove('cur');
+  const tr = $(`#log tr[data-i="${view.cur}"]`);
+  if (tr) { tr.classList.add('cur'); const w = $('#logwrap'); if (tr.offsetTop < w.scrollTop + 24 || tr.offsetTop > w.scrollTop + w.clientHeight - 24) w.scrollTop = tr.offsetTop - w.clientHeight / 2; }
+}
+
+/* ---------- mini chart library (SVG) ---------- */
+const NS = 'http://www.w3.org/2000/svg';
+function S(tag, attrs, parent) { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; }
+function niceMax(v) { if (v <= 0) return 1; const p = 10 ** Math.floor(Math.log10(v)), m = v / p; return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * p; }
+function frame(el, h, yMax, yFmt) {
+  el.innerHTML = '';
+  const W = Math.max(260, el.clientWidth || 600), m = {l: 44, r: 12, t: 8, b: 26};
+  const svg = S('svg', {width: W, height: h, class: 'chart'}, el);
+  const g = {svg, W, h, m, iw: W - m.l - m.r, ih: h - m.t - m.b, yMax};
+  g.y = v => m.t + g.ih - v / yMax * g.ih;
+  const nt = yMax <= 4 && Number.isInteger(yMax) ? yMax : 4;
+  for (let i = 0; i <= nt; i++) {
+    const v = yMax * i / nt, y = Math.round(g.y(v)) + .5;
+    S('line', {x1: m.l, x2: W - m.r, y1: y, y2: y, class: i ? 'grid' : 'base'}, svg);
+    S('text', {x: m.l - 6, y: y + 3.5, class: 'tick', 'text-anchor': 'end'}, svg).textContent = (yFmt || compact)(v);
+  }
+  return g;
+}
+function timeAxis(g, a, b) {
+  const n = Math.max(2, Math.floor(g.iw / 110));
+  for (let i = 0; i <= n; i++) {
+    const x = g.m.l + g.iw * i / n;
+    S('text', {x, y: g.h - 8, class: 'tick', 'text-anchor': i === 0 ? 'start' : i === n ? 'end' : 'middle'}, g.svg).textContent = compact(a + (b - a) * i / n);
+  }
+}
+// (stacked) bars. o = {n, series:[{name, color, vals}], h, a, b (time axis) | labels:[], tip(i)}
+function bars(el, o) {
+  let mx = 0; for (let i = 0; i < o.n; i++) mx = Math.max(mx, sum(o.series.map(s => s.vals[i])));
+  if (!mx) { el.innerHTML = '<div class="empty">no events in range</div>'; return; }
+  const g = frame(el, o.h || 170, niceMax(mx));
+  const bw = g.iw / o.n, gap = bw > 8 ? 2 : bw > 3 ? 1 : 0;
+  for (let i = 0; i < o.n; i++) {
+    let acc = 0; const x = g.m.l + i * bw + gap / 2, w = Math.max(1, bw - gap);
+    o.series.forEach(sr => {
+      const v = sr.vals[i]; if (!v) return;
+      const yTop = g.y(acc + v), yBot = g.y(acc), cut = acc > 0 && yBot - yTop > 4 ? 2 : 0;
+      S('rect', {x, y: yTop, width: w, height: Math.max(.8, yBot - yTop - cut), fill: sr.color, rx: Math.min(2, w / 4)}, g.svg);
+      acc += v;
+    });
+    const hr = S('rect', {x: g.m.l + i * bw, y: g.m.t, width: bw, height: g.ih, class: 'hit'}, g.svg);
+    hr.addEventListener('mousemove', ev => showTip(ev, o.tip(i)));
+    hr.addEventListener('mouseleave', hideTip);
+  }
+  if (o.labels) {
+    const every = Math.ceil(46 / bw);
+    o.labels.forEach((lb, i) => { if (i % every) return; S('text', {x: g.m.l + (i + .5) * bw, y: g.h - 8, class: 'tick', 'text-anchor': 'middle'}, g.svg).textContent = lb; });
+  } else timeAxis(g, o.a, o.b);
+}
+// steps/lines. o = {a, b, series:[{name, color, pts:[[t,v]], area}], h, tip(t), yMax?, endLabels?}
+function steps(el, o) {
+  const mx = o.yMax || niceMax(Math.max(1, ...o.series.flatMap(s => s.pts.map(p => p[1]))));
+  const g = frame(el, o.h || 170, mx);
+  const x = t => g.m.l + (t - o.a) / Math.max(1, o.b - o.a) * g.iw;
+  const valAt = (pts, t) => { let lo = 0, hi = pts.length - 1, r = 0; while (lo <= hi) { const m = (lo + hi) >> 1; if (pts[m][0] <= t) { r = pts[m][1]; lo = m + 1; } else hi = m - 1; } return r; };
+  for (const s of o.series) {
+    let d = `M${x(o.a)},${g.y(valAt(s.pts, o.a))}`, prev = valAt(s.pts, o.a);
+    for (const [t, v] of s.pts) { if (t <= o.a) continue; if (t > o.b) break; d += `H${x(t)}V${g.y(v)}`; prev = v; }
+    d += `H${x(o.b)}`;
+    if (s.area) S('path', {d: d + `V${g.y(0)}H${x(o.a)}Z`, fill: s.color, opacity: .18}, g.svg);
+    S('path', {d, fill: 'none', stroke: s.color, 'stroke-width': 2, 'stroke-linejoin': 'round'}, g.svg);
+    s.last = prev;
+  }
+  if (o.endLabels) {   // direct labels at the end of each series, without overlap
+    const ys = o.series.map(s => ({s, y: g.y(s.last)})).sort((p, q) => p.y - q.y);
+    for (let i = 1; i < ys.length; i++) if (ys[i].y - ys[i - 1].y < 12) ys[i].y = ys[i - 1].y + 12;
+    g.svg.setAttribute('width', g.W); g.m.r = 12;
+    for (const {s, y} of ys) S('text', {x: g.W - g.m.r - 2, y: y - 5, class: 'lbl', 'text-anchor': 'end'}, g.svg).textContent = s.name;
+  }
+  timeAxis(g, o.a, o.b);
+  const cross = S('line', {y1: g.m.t, y2: g.m.t + g.ih, stroke: 'var(--muted)', 'stroke-width': 1, visibility: 'hidden'}, g.svg);
+  const hr = S('rect', {x: g.m.l, y: g.m.t, width: g.iw, height: g.ih, fill: 'transparent'}, g.svg);
+  hr.addEventListener('mousemove', ev => {
+    const bx = g.svg.getBoundingClientRect().left, t = o.a + (ev.clientX - bx - g.m.l) / g.iw * (o.b - o.a);
+    cross.setAttribute('x1', x(t)); cross.setAttribute('x2', x(t)); cross.setAttribute('visibility', 'visible');
+    showTip(ev, `t≈${fmtI(t)}${cyc(t)}<br>` + o.series.map(s => `<span class="sw" style="background:${s.color}"></span>${s.name}: <b>${fmt(valAt(s.pts, t))}</b>`).join('<br>'));
+  });
+  hr.addEventListener('mouseleave', () => { cross.setAttribute('visibility', 'hidden'); hideTip(); });
+}
+// log2 histogram: groups [{name, color, vals}]
+function logHist(el, groups, unit) {
+  const all = groups.flatMap(g => g.vals).filter(v => v > 0);
+  if (!all.length) { el.innerHTML = '<div class="empty">no data in range</div>'; return; }
+  const lo = Math.floor(Math.log2(Math.min(...all))), hi = Math.floor(Math.log2(Math.max(...all)));
+  const n = hi - lo + 1, idx = v => Math.min(n - 1, Math.max(0, Math.floor(Math.log2(Math.max(1, v))) - lo));
+  const series = groups.map(gr => { const vals = new Array(n).fill(0); gr.vals.forEach(v => vals[idx(v)]++); return {name: gr.name, color: gr.color, vals}; });
+  const edge = k => 2 ** (lo + k);
+  bars(el, {n, series, h: 170, labels: [...Array(n).keys()].map(k => compact(edge(k))),
+    tip: i => `[${fmtI(edge(i))}, ${fmtI(edge(i + 1))}) ${unit}` + series.map(s => `<br><span class="sw" style="background:${s.color}"></span>${s.name}: <b>${s.vals[i]}</b>`).join('')});
+}
+function statLine(el, vals) {
+  el.innerHTML = vals.length ? `n=<b>${fmtI(vals.length)}</b> · median <b>${fmtI(quant(vals, .5))}</b> · p90 <b>${fmtI(quant(vals, .9))}</b> · mean <b>${fmtI(sum(vals) / vals.length)}</b> t.u.` : '';
+}
+const RAMP_L = ['#cde2fb', '#b7d3f6', '#9ec5f4', '#86b6ef', '#6da7ec', '#5598e7', '#3987e5', '#2a78d6', '#256abf', '#1c5cab', '#184f95', '#104281', '#0d366b'];
+const RAMP_D = ['#0d366b', '#104281', '#184f95', '#1c5cab', '#256abf', '#2a78d6', '#3987e5', '#5598e7', '#6da7ec', '#86b6ef', '#9ec5f4', '#b7d3f6', '#cde2fb'];
+const rampIdx = (v, mx) => v <= 0 ? -1 : Math.min(12, Math.floor(Math.sqrt(v / mx) * 12.999));
+const rampCol = (v, mx) => { const i = rampIdx(v, mx); return i < 0 ? null : (isDark() ? RAMP_D : RAMP_L)[i]; };
+const rampInk = (v, mx) => { const i = rampIdx(v, mx); return i < 0 ? 'var(--muted)' : (isDark() ? (i >= 8 ? '#0b0b0b' : '#fff') : (i >= 6 ? '#fff' : '#0b0b0b')); };
+function rampLegend(mx, what) {
+  const r = isDark() ? RAMP_D : RAMP_L;
+  return `<div class="legend" style="margin-top:6px"><span>${what}: 1</span><span style="display:inline-block;width:160px;height:10px;border-radius:3px;background:linear-gradient(90deg,${r.join(',')})"></span><span>${fmtI(mx)}</span><span class="muted">(√ scale)</span></div>`;
+}
+function heatmap(el, mat, a, b, what) {
+  const nl = mat.length, nb = mat[0].length, mx = Math.max(0, ...mat.flat());
+  if (!mx) { el.innerHTML = '<div class="empty">no events in range</div>'; return; }
+  el.innerHTML = '';
+  const W = Math.max(260, el.clientWidth), L = 44, rh = 6, T = 8, H = T + nl * rh + 28, cw = (W - L - 12) / nb;
+  const cv = document.createElement('canvas'), dpr = window.devicePixelRatio || 1;
+  cv.width = W * dpr; cv.height = H * dpr; cv.style.width = W + 'px'; cv.style.height = H + 'px'; el.appendChild(cv);
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = cssv('--surface'); ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = cssv('--rowalt'); ctx.fillRect(L, T, W - L - 12, nl * rh);
+  for (let l = 0; l < nl; l++) for (let k = 0; k < nb; k++) {
+    const c = rampCol(mat[l][k], mx); if (!c) continue;
+    ctx.fillStyle = c; ctx.fillRect(L + k * cw, T + l * rh, Math.max(1, cw - (cw > 4 ? 1 : 0)), rh - 1);
+  }
+  ctx.fillStyle = cssv('--muted'); ctx.font = '10.5px system-ui'; ctx.textBaseline = 'middle'; ctx.textAlign = 'right';
+  for (let l = 0; l < nl; l += 8) ctx.fillText(l, L - 6, T + l * rh + rh / 2);
+  const n = Math.max(2, Math.floor((W - L) / 110));
+  for (let i = 0; i <= n; i++) { ctx.textAlign = i === 0 ? 'left' : i === n ? 'right' : 'center'; ctx.fillText(compact(a + (b - a) * i / n), L + (W - L - 12) * i / n, T + nl * rh + 14); }
+  cv.addEventListener('mousemove', ev => {
+    const r = cv.getBoundingClientRect(), k = Math.floor((ev.clientX - r.left - L) / cw), l = Math.floor((ev.clientY - r.top - T) / rh);
+    if (k < 0 || k >= nb || l < 0 || l >= nl) return hideTip();
+    const t0 = a + (b - a) * k / nb, t1 = a + (b - a) * (k + 1) / nb;
+    showTip(ev, `line <b>${l}</b> · window [${fmtI(t0)}, ${fmtI(t1)})<br>${what}: <b>${mat[l][k]}</b>`);
+  });
+  cv.addEventListener('mouseleave', hideTip);
+  el.insertAdjacentHTML('beforeend', rampLegend(mx, what));
+}
+const sw = (c, txt) => `<span><i class="sw" style="background:${c}"></i>${txt}</span>`;
+
+/* ---------- reports ---------- */
+let repTimer = null;
+function scheduleReports() { clearTimeout(repTimer); repTimer = setTimeout(reports, 140); }
+function range() {
+  if (view.sync && (view.u0 > 0 || view.u1 < 1)) return [tOf(view.u0), tOf(view.u1), true];
+  return [C.tmin, C.t_end, false];
+}
+function reports() {
+  const [a, b, zoomed] = range();
+  M = metrics(C, a, b, view.nbins);
+  $('#range').innerHTML = `analyzed range: [${fmtI(a)}, ${fmtI(b)}]${cyc(b - a) ? ' · ' + fmtI((b - a) / P.period) + ' cycles' : ''} ${zoomed ? '· <b>zoom</b> <a href="#" id="unzoom">use all</a>' : '· full run'}`;
+  const uz = $('#unzoom'); if (uz) uz.onclick = ev => { ev.preventDefault(); view.u0 = 0; view.u1 = 1; draw(); };
+  const c1 = cssv('--s1'), c2 = cssv('--s2'), c3 = cssv('--s3');
+  insights();
+  perfCards();
+  const binTip = i => { const t0 = a + M.w * i; return `window [${fmtI(t0)}, ${fmtI(t0 + M.w)})`; };
+  $('#lg-miss').innerHTML = sw(c1, 'compulsory') + sw(c2, 're-fills (conflict)');
+  bars($('#c-miss'), {n: M.nb, a, b, series: [{name: 'compulsory', color: c1, vals: M.bins.cold}, {name: 're-fills', color: c2, vals: M.bins.conf}],
+    tip: i => `${binTip(i)}<br>${sw(c1, 'compulsory')}: <b>${M.bins.cold[i]}</b><br>${sw(c2, 're-fills')}: <b>${M.bins.conf[i]}</b><br>total: <b>${M.bins.cold[i] + M.bins.conf[i]}</b>`});
+  bars($('#c-wb'), {n: M.nb, a, b, series: [{name: 'write-backs', color: c3, vals: M.bins.wb}],
+    tip: i => `${binTip(i)}<br>${sw(c3, 'write-backs')}: <b>${M.bins.wb[i]}</b><br>writes (DIRTY): ${M.bins.D[i]}`});
+  // cumulative
+  const cum = cls => { let n = 0; const p = [[a, 0]]; for (const e of C.events) if (e[1] === 'F' && e[4] === cls && e[0] >= a && e[0] <= b) p.push([e[0], ++n]); return p; };
+  $('#lg-cum').innerHTML = sw(c1, 'compulsory') + sw(c2, 're-fills (conflict)');
+  steps($('#c-cum'), {a, b, series: [{name: 'compulsory', color: c1, pts: cum('cold')}, {name: 're-fills', color: c2, pts: cum('conf')}], endLabels: true});
+  // occupancy
+  $('#nl').textContent = C.nlines;
+  $('#lg-occ').innerHTML = sw(c1, 'valid lines') + sw(c2, 'dirty lines');
+  steps($('#c-occ'), {a, b, yMax: C.nlines, series: [{name: 'valid', color: c1, pts: C.occ.map(o => [o[0], o[1]]), area: true}, {name: 'dirty', color: c2, pts: C.occ.map(o => [o[0], o[2]]), area: true}]});
+  heatmap($('#c-heat'), M.heat[view.heat], a, b, {F: 'FILLs', conf: 're-fills', E: 'write-backs'}[view.heat]);
+  // distributions
+  logHist($('#c-gap'), [{name: 'gaps', color: c1, vals: M.gaps}], 't.u.'); statLine($('#st-gap'), M.gaps);
+  $('#lg-life').innerHTML = sw(c1, 'left clean (replaced)') + sw(c3, 'left with write-back');
+  logHist($('#c-life'), [{name: 'left clean', color: c1, vals: M.life.clean}, {name: 'write-back', color: c3, vals: M.life.wb}], 't.u.');
+  statLine($('#st-life'), M.life.clean.concat(M.life.wb));
+  if (M.open) $('#st-life').insertAdjacentHTML('beforeend', ` · ${M.open} block(s) still resident at the end of the range (not counted)`);
+  logHist($('#c-reuse'), [{name: 'returns', color: c2, vals: M.reuse}], 't.u.'); statLine($('#st-reuse'), M.reuse);
+  conflictMatrix(); pairsTable(); linesTable();
+}
+function insights() {
+  const R = M, out = [], F = R.F;
+  if (!F && !R.E) { $('#insights').innerHTML = '<li>No events in the analyzed range.</li>'; return; }
+  out.push(`<b>${fmtI(F)} misses</b> (FILLs) in the range: <b>${pct(R.cold / F)}</b> compulsory and <b>${pct(R.conf / F)}</b> re-fills of blocks that had been in the cache before.`);
+  if (R.conf) {
+    const top = [...R.lines].sort((p, q) => q.conf - p.conf).filter(L => L.conf).slice(0, 3);
+    const share = sum(top.map(L => L.conf)) / R.conf;
+    out.push(`Re-fills concentrate on lines <b>${top.map(L => L.l).join(', ')}</b>, which account for <b>${pct(share)}</b> of them${top[0] ? ` (line ${top[0].l} alone: ${top[0].conf})` : ''}.`);
+    const pr = [...R.pairs.values()].sort((p, q) => q.n - p.n)[0];
+    if (pr) out.push(`Most intense contention: tags <b>${esc(pr.a)} ↔ ${esc(pr.b)}</b> on line <b>${pr.l}</b>, ${pr.n} replacements${pr.pp ? ` and ${pr.pp} A→B→A ping-pongs` : ''}.`);
+    const unused = C.nlines - C.usedLines.length;
+    if (unused > 0) out.push(`There are re-fills while <b>${unused} of ${C.nlines} lines were never used</b> (max occupancy ${C.warm.max}/${C.nlines}): the repeated misses come from <b>mapping conflicts</b> (blocks with the same index), not from lack of capacity. Associativity (2-way) or changing the memory layout of the contested data tends to eliminate them.`);
+    else out.push(`All cache lines were used; some re-fills may be <b>capacity</b> misses (working set larger than the cache), not only conflicts.`);
+  } else if (F) out.push('No re-fills: every miss in the range is compulsory (the working set fits in the cache).');
+  const tot = R.bins.cold.map((v, i) => v + R.bins.conf[i]), pk = tot.indexOf(Math.max(...tot)), avg = F / R.nb;
+  if (F && tot[pk] > 1.5 * avg) out.push(`Miss peak in window <b>[${fmtI(R.a + R.w * pk)}, ${fmtI(R.a + R.w * (pk + 1))})</b>: ${tot[pk]} FILLs, <b>${fmt(tot[pk] / avg)}×</b> the per-window average (${fmt(avg)}).`);
+  if (isFinite(C.warm.t90)) {
+    const after = C.events.filter(e => e[1] === 'F' && e[0] > C.warm.t90), afterCold = after.filter(e => e[4] === 'cold').length;
+    out.push(`Warm-up: occupancy reaches 90% of its maximum (${C.warm.max} lines) at <b>t=${fmtI(C.warm.t90)}</b>${cyc(C.warm.t90)}. After that there were ${after.length} misses, ${pct(after.length ? afterCold / after.length : NaN)} compulsory.`);
+  }
+  if (R.reuse.length) out.push(`Half of the evicted blocks came back in less than <b>${fmtI(quant(R.reuse, .5))} t.u.</b>${cyc(quant(R.reuse, .5))} (p90 ${fmtI(quant(R.reuse, .9))}): they were evicted while still in use.`);
+  const exits = R.life.clean.length + R.life.wb.length;
+  if (exits) out.push(`<b>${pct(R.life.wb.length / exits)}</b> of block exits required a write-back; the other ${pct(R.life.clean.length / exits)} were clean replacements. Median block lifetime: <b>${fmtI(quant(R.life.clean.concat(R.life.wb), .5))} t.u.</b>`);
+  if (R.D) out.push(`${fmtI(R.D)} DIRTY events (only the first write of each residency is logged): a write-through cache would do <b>at least ${fmtI(R.D)}</b> memory writes, versus ${fmtI(R.E)} write-backs here.`);
+  if (P.missPen > 0 || P.wbPen > 0) {
+    const st = R.F * P.missPen + R.E * P.wbPen;
+    out.push(`Estimated stall: <b>${fmtI(st)} cycles</b> (${fmtI(R.F)} × ${fmt(P.missPen)} + ${fmtI(R.E)} × ${fmt(P.wbPen)})${P.period > 0 ? `, <b>${pct(st / (R.span / P.period))}</b> of the ${fmtI(R.span / P.period)} cycles in the range` : ''}.`);
+  }
+  $('#insights').innerHTML = out.map(x => `<li>${x}</li>`).join('');
+}
+function perfCards() {
+  const R = M, bb = P.blockBytes;
+  const rd = R.F * (bb || 1), wr = R.E * (bb || 1), unit = bb ? bytes : (n => fmtI(n) + ' blocks');
+  const cyclesSpan = P.period > 0 ? R.span / P.period : 0;
+  const items = [
+    [fmtI(R.F), 'misses (FILLs)', `${fmtI(R.cold)} compulsory · ${fmtI(R.conf)} re-fills`],
+    [pct(R.conf / R.F), 'misses that are re-fills', 'conflict/capacity'],
+    [fmtI(R.pp), 'ping-pongs A→B→A', 'thrashing between 2 blocks'],
+    [fmtI(R.E), 'write-backs', `${fmtI(R.repl)} clean replacements`],
+    [unit(rd), 'read from memory', bb ? `${fmtI(R.F)} blocks of ${bb} B` : 'set the block size to see bytes'],
+    [unit(wr), 'written to memory', 'write-backs'],
+    traffic(rd + wr, cyclesSpan || R.span, cyclesSpan ? 'cycles' : 't.u.', bb),
+    [pct(R.util), 'average occupancy', `dirty: ${pct(R.dirtyUtil)} · max ${C.warm.max}/${C.nlines}`],
+    [fmtI(R.usedLines) + '/' + C.nlines, 'active lines', 'in the range'],
+  ];
+  if (P.missPen > 0 || P.wbPen > 0) items.push([fmtI(R.F * P.missPen + R.E * P.wbPen), 'estimated stall cycles', `miss ${fmt(P.missPen)} · WB ${fmt(P.wbPen)} cycles`]);
+  $('#pcards').innerHTML = items.map(([v, l, h]) => `<div class="card"><b>${v}</b><span>${l}</span><i>${h}</i></div>`).join('');
+}
+// average traffic on a readable scale: per 1, 1,000 or 1,000,000 time units/cycles
+function traffic(amount, span, unit, bb) {
+  const rate = amount / Math.max(1, span); let k = 1;
+  while (rate * k < 1 && k < 1e6) k *= 1000;
+  return [(rate * k >= 10 ? fmtI(rate * k) : fmt(rate * k)) + (bb ? ' B' : ' blocks'), `average traffic per ${k === 1 ? '' : fmtI(k) + ' '}${k === 1 ? unit.replace(/s$/, '') : unit}`, 'read + write'];
+}
+function conflictMatrix() {
+  const tags = [...new Set([...M.mat.keys()].flatMap(k => k.split('→')))].sort((p, q) => (+p - +q) || p.localeCompare(q));
+  if (!tags.length) { $('#c-mat').innerHTML = '<div class="empty">no replacements in range</div>'; return; }
+  const mx = Math.max(...M.mat.values());
+  let h = '<table class="mat"><thead><tr><th class="l">out \\ in</th>' + tags.map(t => `<th>${esc(t)}</th>`).join('') + '<th>total</th></tr></thead><tbody>';
+  for (const f of tags) {
+    let row = 0;
+    h += `<tr><th class="l">tag ${esc(f)}</th>` + tags.map(t => {
+      const v = M.mat.get(f + '→' + t) || 0; row += v; const bg = rampCol(v, mx);
+      return `<td style="${bg ? `background:${bg};color:${rampInk(v, mx)}` : 'color:var(--muted)'}" title="tag ${esc(f)} replaced by ${esc(t)}: ${v}">${v || '·'}</td>`;
+    }).join('') + `<td><b>${row}</b></td></tr>`;
+  }
+  $('#c-mat').innerHTML = h + '</tbody></table>' + rampLegend(mx, 'replacements');
+}
+function pairsTable() {
+  const ps = [...M.pairs.values()].sort((p, q) => q.n - p.n || q.pp - p.pp).slice(0, 40);
+  $('#pairs').innerHTML = '<thead><tr><th>line</th><th class="l">tag pair</th><th>replacements</th><th>ping-pongs</th></tr></thead><tbody>' +
+    (ps.length ? ps.map(p => `<tr><td>${p.l}</td><td class="l">${esc(p.a)} ↔ ${esc(p.b)}</td><td>${p.n}</td><td>${p.pp}</td></tr>`).join('') : '<tr><td colspan="4" class="l muted">none</td></tr>') + '</tbody>';
+}
+const LCOLS = [
+  ['l', 'line'], ['F', 'fills'], ['cold', 'compuls.'], ['conf', 're-fills'], ['pp', 'ping-pong'], ['E', 'write-backs'],
+  ['repl', 'clean repl.'], ['D', 'dirty'], ['nb', 'blocks'], ['occ', 'occupancy'], ['life', 'median life'], ['seq', 'sequence of tags brought in', 'l']];
+function lineRows() {
+  return M.lines.map(L => ({...L, nb: L.blocks.size, occ: L.valid / M.span, life: L.life.length ? quant(L.life, .5) : NaN}));
+}
+function linesTable() {
+  const rows = lineRows(), {k, d} = view.sort;
+  rows.sort((p, q) => { const x = p[k], y = q[k]; if (k === 'seq') return d * (x.length - y.length); return d * ((isNaN(x) ? -1 : x) - (isNaN(y) ? -1 : y)) || p.l - q.l; });
+  const mx = Math.max(1, ...rows.map(r => r.conf));
+  $('#lines').innerHTML = '<thead><tr>' + LCOLS.map(([key, lab, al]) => `<th class="sort ${al || ''}" data-k="${key}">${lab}${key === k ? (d < 0 ? ' ▾' : ' ▴') : ''}</th>`).join('') + '</tr></thead><tbody>' +
+    rows.map(r => `<tr data-l="${r.l}" class="${r.F || r.E || r.D ? '' : 'dim'}"><td>${r.l}</td><td>${r.F}</td><td>${r.cold}</td>` +
+      `<td><span class="hbar" style="width:${Math.round(50 * r.conf / mx)}px"></span>${r.conf}</td><td>${r.pp}</td><td>${r.E}</td><td>${r.repl}</td><td>${r.D}</td><td>${r.nb}</td>` +
+      `<td>${pct(r.occ)}</td><td>${isNaN(r.life) ? '–' : fmtI(r.life)}</td>` +
+      `<td class="l mono seq" title="${esc(r.seq.join(' '))}">${esc(r.seq.slice(0, 50).join(' '))}${r.seq.length > 50 ? ' …' : ''}</td></tr>`).join('') + '</tbody>';
+}
+
+/* ---------- cache comparison ---------- */
+const CMP = [
+  ['lines', c => c.nlines], ['events', c => c.events.length], ['used lines', (c, R) => `${C2(c).usedLines.length} (${pct(c.usedLines.length / c.nlines)})`],
+  ['FILLs (misses)', (c, R) => R.F], ['compulsory', (c, R) => R.cold], ['re-fills', (c, R) => `${R.conf} (${pct(R.conf / R.F)})`],
+  ['ping-pongs', (c, R) => R.pp], ['write-backs', (c, R) => R.E], ['clean replacements', (c, R) => R.repl], ['DIRTY events', (c, R) => R.D],
+  ['average occupancy', (c, R) => pct(R.util)], ['max occupancy', c => `${c.warm.max}/${c.nlines}`], ['warm-up (90%)', c => isFinite(c.warm.t90) ? fmtI(c.warm.t90) : '–'],
+  ['median lifetime (t.u.)', (c, R) => { const v = R.life.clean.concat(R.life.wb); return v.length ? fmtI(quant(v, .5)) : '–'; }],
+  ['median time out of cache (t.u.)', (c, R) => R.reuse.length ? fmtI(quant(R.reuse, .5)) : '–'],
+  ['traffic (read + write)', (c, R) => P.blockBytes ? bytes((R.F + R.E) * P.blockBytes) : fmtI(R.F + R.E) + ' blocks'],
+  ['anomalies', c => c.anomalies.length],
+];
+function C2(c) { prep(c); return c; }
+function cmpMetrics() { return DATA.caches.map(c => { prep(c); return metrics(c, c.tmin, c.t_end, 10); }); }
+function compare() {
+  const Rs = cmpMetrics();
+  $('#cmp').innerHTML = '<thead><tr><th class="l">metric</th>' + DATA.caches.map(c => `<th>${esc(c.name)}</th>`).join('') + '</tr></thead><tbody>' +
+    CMP.map(([lab, f]) => `<tr><td class="l">${lab}</td>` + DATA.caches.map((c, i) => `<td>${f(c, Rs[i])}</td>`).join('') + '</tr>').join('') + '</tbody>';
+  const shown = DATA.caches.slice(0, 8), cols = shown.map((_, i) => cssv('--t' + i));
+  const a = Math.min(...shown.map(c => c.tmin)), b = Math.max(...shown.map(c => c.t_end));
+  $('#lg-cmp').innerHTML = shown.map((c, i) => sw(cols[i], esc(c.name))).join('') + (DATA.caches.length > 8 ? '<span class="muted">(first 8 only)</span>' : '');
+  steps($('#c-cmp'), {a, b, h: 220, endLabels: true, series: shown.map((c, i) => {
+    let n = 0; const pts = [[c.tmin, 0]]; for (const e of c.events) if (e[1] === 'F') pts.push([e[0], ++n]);
+    return {name: c.name, color: cols[i], pts};
+  })});
+}
+
+/* ---------- overview cards and validation ---------- */
+function cards() {
+  const R = metrics(C, C.tmin, C.t_end, 10);
+  const items = [
+    [fmtI(C.nlines), 'cache lines'], [`${C.usedLines.length}`, `used lines (${pct(C.usedLines.length / C.nlines)})`],
+    [fmtI(R.F), 'FILLs (misses)'], [fmtI(R.cold), 'compulsory misses'], [fmtI(R.conf), 're-fills (conflict)'],
+    [fmtI(R.E), 'EVICTs (write-backs)'], [fmtI(R.repl), 'clean replacements'], [fmtI(R.D), 'DIRTY events'], [pct(R.util), 'average occupancy'],
+  ];
+  $('#cards').innerHTML = items.map(([b, l]) => `<div class="card"><b>${b}</b><span>${l}</span></div>`).join('');
+  const issues = C.anomalies, ok = !issues.length;
+  $('#valid').innerHTML = `<div class="panel" style="padding:8px 12px"><details><summary>${ok
+    ? '<b class="ok">✓ Event sequence is consistent</b> <span class="small">(no DIRTY/EVICT on invalid lines, no tag mismatches, no dirty line replaced without EVICT)</span>'
+    : `<b class="bad">✗ ${issues.length} anomaly(ies)</b> in the event sequence`}</summary>
+    ${issues.length ? '<ul class="small">' + issues.map(x => `<li>${esc(x)}</li>`).join('') + '</ul>' : ''}</details></div>`;
+  $('#subtitle').textContent = `${C.file} · ${C.nlines} lines · ${fmtI(C.events.length)} events · t ∈ [${fmtI(C.tmin)}, ${fmtI(C.events.length ? C.events[C.events.length - 1][0] : 0)}]`;
+}
+function legend() {
+  let h = view.color === 'state'
+    ? sw('var(--s1)', 'valid clean') + sw('var(--s2)', 'valid dirty')
+    : C.tagList.map((t, i) => sw(`var(--t${Math.min(i, 7)})`, 'tag ' + esc(t))).join('') + sw('repeating-linear-gradient(45deg,#888 0 2px,transparent 2px 4px)', 'dirty (hatched)');
+  h += sw('var(--rowalt);border:1px solid var(--border)', 'invalid') + '<span>▕ FILL</span><span><span style="color:var(--s3)">▶</span> EVICT / write-back</span><span><i class="sw" style="width:2px;background:var(--ink)"></i>cursor</span>';
+  if (view.orient === 'h') h += '<span>“occ.” strip: valid / dirty lines</span>';
+  $('#legend').innerHTML = h;
+}
+
+/* ---------- CSV ---------- */
+function csv(name, rows) {
+  const cell = v => typeof v === 'number' ? (isFinite(v) ? String(Math.round(v * 1e4) / 1e4) : '') : /[,"\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v);
+  const blob = new Blob(['﻿' + rows.map(r => r.map(cell).join(',')).join('\n')], {type: 'text/csv;charset=utf-8'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+const CSV = {
+  events: () => csv(`${C.name}_events.csv`, [['index', 'time', 'event', 'line', 'tag', 'class', 'previous', 'previous_tag', 'interpretation']]
+    .concat(C.events.map((e, i) => [i, e[0], NAME[e[1]], e[2], e[3], e[4], e[5], e[6], describeEvent(e).replace(/<[^>]+>/g, '')]))),
+  lines: () => csv(`${C.name}_per_line.csv`, [['line', 'fills', 'compulsory', 'refills', 'pingpongs', 'writebacks', 'clean_replacements', 'dirty', 'distinct_blocks', 'occupancy', 'median_lifetime', 'tag_sequence']]
+    .concat(lineRows().map(r => [r.l, r.F, r.cold, r.conf, r.pp, r.E, r.repl, r.D, r.nb, r.occ, r.life, r.seq.join(' ')]))),
+  bins: () => csv(`${C.name}_windows.csv`, [['start', 'end', 'compulsory', 'refills', 'writebacks', 'dirty']]
+    .concat(M.bins.cold.map((_, i) => [M.a + M.w * i, M.a + M.w * (i + 1), M.bins.cold[i], M.bins.conf[i], M.bins.wb[i], M.bins.D[i]]))),
+  cmp: () => { const Rs = cmpMetrics(); csv('comparison.csv', [['metric', ...DATA.caches.map(c => c.name)]].concat(CMP.map(([lab, f]) => [lab, ...DATA.caches.map((c, i) => { const v = f(c, Rs[i]); return typeof v === 'number' ? v : String(v); })]))); },
+};
+
+/* ---------- cache switching / controls ---------- */
+function selectCache(i) {
+  stop();
+  C = DATA.caches[i]; prep(C);
+  $$('#tabs button').forEach((b, j) => b.classList.toggle('on', i === j));
+  view.u0 = 0; view.u1 = 1;
+  $('#slider').max = Math.max(0, C.events.length - 1);
+  cards(); legend(); buildLog();
+  setCur(0);
+  reports();
+  try { localStorage.setItem('cacheviz.tab', C.name); } catch (e) {}
+}
+function stop() { if (view.timer) { clearInterval(view.timer); view.timer = null; $('#play').textContent = '▶ play'; } }
+function play() {
+  if (view.timer) return stop();
+  if (view.cur >= C.events.length - 1) setCur(0);
+  $('#play').textContent = '❚❚ pause';
+  view.timer = setInterval(() => { if (view.cur >= C.events.length - 1) return stop(); setCur(view.cur + 1); }, 1000 / +$('#speed').value);
+}
+function rerenderAll() { draw(); reports(); compare(); }
+
+function init() {
+  $('#tabs').innerHTML = DATA.caches.map((c, i) => `<button data-i="${i}">${esc(c.name)}</button>`).join('');
+  $('#tabs').addEventListener('click', e => { const b = e.target.closest('button'); if (b) selectCache(+b.dataset.i); });
+  $('#mode').onchange = e => { view.mode = e.target.value; view.u0 = 0; view.u1 = 1; draw(); };
+  $('#orient').onchange = e => { view.orient = e.target.value; legend(); draw(); };
+  $('#color').onchange = e => { view.color = e.target.value; legend(); draw(); };
+  $('#rowpx').oninput = e => { view.rowPx = +e.target.value; draw(); };
+  $('#zin').onclick = () => zoom(0.5); $('#zout').onclick = () => zoom(2); $('#zreset').onclick = () => { view.u0 = 0; view.u1 = 1; draw(); };
+  $('#prev').onclick = () => setCur(view.cur - 1); $('#next').onclick = () => setCur(view.cur + 1);
+  $('#play').onclick = play;
+  $('#speed').onchange = () => { if (view.timer) { stop(); play(); } };
+  $('#slider').oninput = e => setCur(+e.target.value);
+  $$('.ft').forEach(x => x.onchange = buildLog);
+  $('#fline').oninput = buildLog;
+  $('#log').addEventListener('click', e => { const tr = e.target.closest('tr[data-i]'); if (tr) setCur(+tr.dataset.i); });
+  $('#lines').addEventListener('click', e => {
+    const th = e.target.closest('th[data-k]');
+    if (th) { const k = th.dataset.k; view.sort = {k, d: view.sort.k === k ? -view.sort.d : (k === 'l' ? 1 : -1)}; return linesTable(); }
+    const tr = e.target.closest('tr[data-l]'); if (!tr) return;
+    const l = +tr.dataset.l, L = M.lines[l];
+    $('#fline').value = l; buildLog();
+    if (L.first !== null) setCur(L.first, true);
+    $('#s-tl').scrollIntoView({behavior: 'smooth'});
+  });
+  $('#sync').onchange = e => { view.sync = e.target.checked; reports(); };
+  $('#nbins').onchange = e => { view.nbins = +e.target.value; reports(); };
+  $('#heat').onchange = e => { view.heat = e.target.value; reports(); };
+  for (const [id, key] of [['#p-period', 'period'], ['#p-block', 'blockBytes'], ['#p-miss', 'missPen'], ['#p-wb', 'wbPen']]) {
+    const inp = $(id); inp.value = P[key] || '';
+    inp.oninput = () => { P[key] = Math.max(0, +inp.value || 0); saveP(); reports(); compare(); setCur(view.cur, true); };
+  }
+  $$('[data-csv]').forEach(b => b.onclick = () => CSV[b.dataset.csv]());
+  document.addEventListener('keydown', e => {
+    if (e.target.matches('input:not([type=range]):not([type=checkbox]),select')) return;
+    if (e.key === 'ArrowRight') { e.preventDefault(); setCur(view.cur + 1); }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); setCur(view.cur - 1); }
+    else if (e.key === ' ') { e.preventDefault(); play(); }
+  });
+  $('#theme').onclick = () => { document.documentElement.dataset.theme = isDark() ? 'light' : 'dark'; rerenderAll(); };
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', rerenderAll);
+  $('#print').onclick = () => window.print();
+  let rz; window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(rerenderAll, 150); });
+  setupCanvas();
+  let start = 0;
+  try { const n = localStorage.getItem('cacheviz.tab'); const j = DATA.caches.findIndex(c => c.name === n); if (j >= 0) start = j; } catch (e) {}
+  selectCache(start);
+  compare();
+}
+init();
+</script>
+</body>
+</html>
